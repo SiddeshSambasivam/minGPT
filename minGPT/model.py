@@ -4,6 +4,7 @@ import numpy as np
 from torch.nn import Functional as F
 import logging
 
+import math
 
 logger = logging.getLogger(__name__)
 # This means that logger names track the package/module hierarchy, 
@@ -79,4 +80,14 @@ class SelfAttention(nn.module):
         q = self.query(x).view(B,T, self.n_head, C //  self.n_head).transpose(1,2)
         v = self.value(x).view(B,T, self.n_head, C //  self.n_head).transpose(1,2)
 
-        
+        # How does tensor multiplication works? Like how to check 
+        # if two tensors are compatible for tensor multiplication
+        att = (q @ k.transpose(-2,-1)) * (1.0 / math.sqrt(k.size(-1)))
+        att = att.masked_fill(self.mask[:,:,:T,:T]==0, float('-inf'))
+        att = F.softmax(att, dim=1)
+        att = self.attn_drop(att)
+        y = att @ v # (B, nh, T, T) x (B,nh,T,hs) => (B, nh, T, hs)
+        y = y.transpose(1,2).contiguous().view(B,T,C)
+
+        y = self.resid_drop(self.proj(y))
+        return y 
