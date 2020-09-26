@@ -3,7 +3,6 @@ import torch.nn as nn
 import numpy as np
 from torch.nn import Functional as F
 import logging
-
 import math
 
 logger = logging.getLogger(__name__)
@@ -91,3 +90,74 @@ class SelfAttention(nn.module):
 
         y = self.resid_drop(self.proj(y))
         return y 
+
+class TransformerBlock(nn.module):
+
+    def __init__(self, config):
+        super().__init__()
+        self.ln1 = nn.LayerNorm(config.n_embed)
+        self.ln2 = nn.LayerNorm(config.n_embed)
+        self.attn = SelfAttention(config)
+        self.mlp = nn.Sequential(
+            nn.Linear(config.n_embed, 4*config.n_embed),
+            nn.GELU()
+            nn.Linear(4*config.n_embed, config.n_embed)
+        )
+
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))
+        x = x + self.mlp(self.ln2(x))
+        return x
+    
+class minGPT(nn.module):
+
+    def __init__(self, config):
+        
+        self.tok_emb = nn.Embedding(config.vocab_size, config.n_embed)
+        self.pos_emb = nn.Parameter(
+            torch.zeros(1, config.block_size, config.n_embed)
+        )
+        self.drop = nn.Dropout(config.embd_pdrop)
+
+        self.blocks = nn.Sequential(
+            *[
+                TransformerBlock(config) for _ in range(config.n_layer)
+            ]
+        )
+
+        self.ln_f =  nn.LayerNorm(config.n_embed)
+        self.head = nn.Linear(
+            config.n_embd,
+            config.vocab_size,
+            bias=False
+        )
+        self.block_size = config.block_size
+        self.apply(self._init_weights)
+
+        logging.info(
+            "number of parameters: %e", sum(
+                p.numel() for p in self.parameters()
+            )
+        )
+    
+    def get_block_size(self):
+        return self.block_size
+    
+    def _init_weights(self, module):
+        if isinstance(module (nn.Linear, nn.Embedding)):
+            module.weight.data.normal(mean=0.0, std=0.02)
+            if isinstance(module, nn.Linear) and module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+    
+    def configure_optimizers(self, train_config):
+        pass
+
+    def forward(self, idx, targets=None):
+        b, t = idx.size()
+        # t -> len of seq
+        # b -> Batch Size
+        assert t <= self.block_size, "exhausted the block size"
+        
