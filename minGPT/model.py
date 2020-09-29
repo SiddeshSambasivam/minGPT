@@ -160,4 +160,19 @@ class minGPT(nn.module):
         # t -> len of seq
         # b -> Batch Size
         assert t <= self.block_size, "exhausted the block size"
+
+        token_embeddings = self.tok_emb(idx)
+        position_embeddings = self.pos_emb[:,:t,:]
+        x = self.drop(token_embeddings + position_embeddings)
+        x = self.blocks(x)
+        x = self.ln_f(x)
+        logits = self.head(x)
+
+        loss = None
+        if targets is not None:
+            loss = F.cross_entropy(
+                logits.view(-1, logits.view(-1), target.view(-1))
+            )
+
+        return logits, loss
         
